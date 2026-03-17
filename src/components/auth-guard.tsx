@@ -2,14 +2,17 @@ import { ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useSession } from "@/lib/auth-client";
+import { PortalIntentProvider } from "@/lib/portal-intent";
 
 import AuthScreen from "./screens/auth-screen";
 
 export default function AuthGuard({ children }: { children: ReactNode }) {
   const { data: session, isPending, error } = useSession();
 
+  let content: ReactNode;
+
   if (isPending) {
-    return (
+    content = (
       <View style={styles.stateScreen}>
         <ActivityIndicator color="#c65a18" size="large" />
         <Text style={styles.stateTitle}>Tjekker din session</Text>
@@ -18,10 +21,8 @@ export default function AuthGuard({ children }: { children: ReactNode }) {
         </Text>
       </View>
     );
-  }
-
-  if (error) {
-    return (
+  } else if (error) {
+    content = (
       <View style={styles.stateScreen}>
         <Text style={styles.stateTitle}>Forbindelsen fejlede</Text>
         <Text style={styles.stateSubtitle}>
@@ -29,13 +30,13 @@ export default function AuthGuard({ children }: { children: ReactNode }) {
         </Text>
       </View>
     );
+  } else if (!session?.user) {
+    content = <AuthScreen />;
+  } else {
+    content = children;
   }
 
-  if (!session?.user) {
-    return <AuthScreen />;
-  }
-
-  return <>{children}</>;
+  return <PortalIntentProvider>{content}</PortalIntentProvider>;
 }
 
 const styles = StyleSheet.create({
