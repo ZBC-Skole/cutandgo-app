@@ -53,6 +53,7 @@ export default function Index() {
   const [todaysBookings, setTodaysBookings] = useState<Booking[]>([]);
   const [isPinSubmitting, setIsPinSubmitting] = useState(false);
   const [salonForm, setSalonForm] = useState<CreateSalonInput>(initialSalonForm);
+  const [hasEditedSlug, setHasEditedSlug] = useState(false);
   const [isSalonSubmitting, setIsSalonSubmitting] = useState(false);
   const [createdSalon, setCreatedSalon] = useState<Salon | null>(null);
   const isWide = width >= 1000;
@@ -117,7 +118,17 @@ export default function Index() {
     }
   }, [setPortalIntent, viewer]);
 
+  const isAdminWithoutSalon =
+    portalIntent === "admin" &&
+    viewer?.appUser.role === "admin" &&
+    !viewer.salon &&
+    !createdSalon;
+
   const shellTitle = useMemo(() => {
+    if (isAdminWithoutSalon) {
+      return "Admin onboarding";
+    }
+
     if (portalIntent === "salon") {
       return "Salon-tablet";
     }
@@ -127,7 +138,7 @@ export default function Index() {
     }
 
     return "Kundeprofil";
-  }, [portalIntent]);
+  }, [isAdminWithoutSalon, portalIntent]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -137,6 +148,7 @@ export default function Index() {
     setNextBooking(null);
     setTodaysBookings([]);
     setCreatedSalon(null);
+    setHasEditedSlug(false);
     setWorkerPin("");
   };
 
@@ -198,7 +210,7 @@ export default function Index() {
       !salonForm.postalCode.trim() ||
       !salonForm.city.trim()
     ) {
-      setScreenMessage("Udfyld de vigtigste salonfelter før du opretter den.");
+      setScreenMessage("Udfyld navn, adresse og kontaktinfo for at fortsætte.");
       return;
     }
 
@@ -212,7 +224,16 @@ export default function Index() {
       });
 
       setCreatedSalon(salon);
+      setViewer((currentViewer) =>
+        currentViewer
+          ? {
+              ...currentViewer,
+              salon,
+            }
+          : currentViewer,
+      );
       setSalonForm(initialSalonForm);
+      setHasEditedSlug(false);
     } catch (error) {
       setScreenMessage(
         error instanceof Error
@@ -241,89 +262,15 @@ export default function Index() {
       contentContainerStyle={styles.screen}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={[styles.shell, isWide && styles.shellWide]}>
-        <View style={[styles.hero, isWide && styles.heroWide]}>
-          <Text style={styles.eyebrow}>Cut&Go</Text>
-          <Text style={styles.heroTitle}>{shellTitle}</Text>
-          <Text style={styles.heroSubtitle}>
-            {portalIntent === "salon"
-              ? "Salonens hovedkonto logger ind først. Derefter vælger medarbejderen sig selv med PIN."
-              : portalIntent === "admin"
-                ? "Admin-flowet er minimalt, men kan nu oprette saloner direkte mod API’et."
-                : "Kundeflowet er stadig enkelt, men konto og roller er nu synlige efter login."}
-          </Text>
-
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Logget ind som</Text>
-            <Text style={styles.summaryValue}>
-              {viewer?.appUser.fullName || viewer?.authUser.name}
-            </Text>
-            <Text style={styles.summaryMeta}>{viewer?.authUser.email}</Text>
-            <Text style={styles.summaryMeta}>
-              Rolle: {viewer?.appUser.role ?? "ukendt"}
-            </Text>
-            {viewer?.salon ? (
-              <Text style={styles.summaryMeta}>Salon: {viewer.salon.name}</Text>
-            ) : null}
-          </View>
-
-          <View style={styles.heroActions}>
-            <Pressable
-              onPress={() => setPortalIntent("client")}
-              style={[
-                styles.intentChip,
-                portalIntent === "client" && styles.intentChipActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.intentChipText,
-                  portalIntent === "client" && styles.intentChipTextActive,
-                ]}
-              >
-                Kunde
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setPortalIntent("salon")}
-              style={[
-                styles.intentChip,
-                portalIntent === "salon" && styles.intentChipActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.intentChipText,
-                  portalIntent === "salon" && styles.intentChipTextActive,
-                ]}
-              >
-                Salon
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setPortalIntent("admin")}
-              style={[
-                styles.intentChip,
-                portalIntent === "admin" && styles.intentChipActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.intentChipText,
-                  portalIntent === "admin" && styles.intentChipTextActive,
-                ]}
-              >
-                Admin
-              </Text>
-            </Pressable>
-          </View>
-
-          <Pressable onPress={handleSignOut} style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Log ud</Text>
+      <View style={styles.shell}>
+        <View style={styles.topBar}>
+          <Text style={styles.logoText}>Cut&Go</Text>
+          <Pressable onPress={handleSignOut} style={styles.logoutButton}>
+            <Text style={styles.logoutButtonText}>Log ud</Text>
           </Pressable>
         </View>
 
-        <View style={[styles.content, isWide && styles.contentWide]}>
+        <View style={styles.content}>
           {screenMessage ? (
             <View style={styles.notice}>
               <Text style={styles.noticeText}>{screenMessage}</Text>
@@ -348,9 +295,28 @@ export default function Index() {
             <AdminPanel
               createdSalon={createdSalon}
               form={salonForm}
+              hasEditedSlug={hasEditedSlug}
+              isOnboarding={isAdminWithoutSalon}
               isSubmitting={isSalonSubmitting}
               viewer={viewer}
               onChange={setSalonForm}
+              onNameChange={(value) => {
+                setSalonForm((currentForm) => ({
+                  ...currentForm,
+                  name: value,
+                  slug:
+                    hasEditedSlug || currentForm.slug.trim()
+                      ? currentForm.slug
+                      : slugify(value),
+                }));
+              }}
+              onSlugChange={(value) => {
+                setHasEditedSlug(true);
+                setSalonForm((currentForm) => ({
+                  ...currentForm,
+                  slug: slugify(value),
+                }));
+              }}
               onSubmit={handleSalonCreate}
             />
           ) : null}
@@ -478,127 +444,208 @@ function SalonPanel({
 function AdminPanel({
   createdSalon,
   form,
+  hasEditedSlug,
+  isOnboarding,
   isSubmitting,
   viewer,
   onChange,
+  onNameChange,
+  onSlugChange,
   onSubmit,
 }: {
   createdSalon: Salon | null;
   form: CreateSalonInput;
+  hasEditedSlug: boolean;
+  isOnboarding: boolean;
   isSubmitting: boolean;
   viewer: ViewerContext | null;
   onChange: (value: CreateSalonInput) => void;
+  onNameChange: (value: string) => void;
+  onSlugChange: (value: string) => void;
   onSubmit: () => void;
 }) {
   const isAdmin = viewer?.appUser.role === "admin";
+  const [step, setStep] = useState(1);
+
+  if (createdSalon) {
+    return (
+      <View style={[styles.panel, styles.successPanel]}>
+        <Text style={styles.panelEyebrow}>Klar</Text>
+        <Text style={styles.panelTitle}>{createdSalon.name}</Text>
+        <Text style={styles.panelBody}>
+          Salonen er oprettet. Du logges nu ind på klinikkens system...
+        </Text>
+        <View style={styles.successMeta}>
+          <Text style={styles.successMetaText}>Slug: {createdSalon.slug}</Text>
+          <Text style={styles.successMetaText}>
+            {createdSalon.addressLine1}, {createdSalon.postalCode} {createdSalon.city}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  const isStep1Valid = form.name.trim().length > 0;
+  const isStep2Valid = form.addressLine1.trim().length > 0 && form.postalCode.trim().length > 0 && form.city.trim().length > 0;
+
+  const handleNext = () => setStep((s) => s + 1);
+  const handleBack = () => setStep((s) => Math.max(1, s - 1));
 
   return (
     <View style={styles.stack}>
-      <View style={styles.panel}>
-        <Text style={styles.panelEyebrow}>Admin</Text>
-        <Text style={styles.panelTitle}>Opret salon på platformen</Text>
-        <Text style={styles.panelBody}>
-          Minimal version lige nu: vi opretter salonens grunddata direkte mod
-          backend.
-        </Text>
+      <View style={[styles.panel, isOnboarding && styles.onboardingPanel]}>
+        <Text style={styles.panelEyebrow}>{isOnboarding ? "Opret din første salon" : "Ny salon"}</Text>
+        
+        {isOnboarding ? (
+          <View style={styles.stepsRow}>
+            <StepBadge active={step >= 1} label="1. Salon" />
+            <StepBadge active={step >= 2} label="2. Adresse" />
+            <StepBadge active={step >= 3} label="3. Kontakt" />
+          </View>
+        ) : null}
 
         {!isAdmin ? (
           <View style={styles.noticeSoft}>
             <Text style={styles.noticeSoftText}>
-              Din bruger er logget ind, men har ikke `admin`-rolle endnu. Selve
-              UI’et er klar, men backend vil afvise oprettelsen uden admin-adgang.
+              Din bruger mangler admin-rolle, så backend kan afvise oprettelsen.
             </Text>
           </View>
         ) : null}
 
-        <View style={styles.formGrid}>
-          <FormInput
-            label="Salonnavn"
-            onChangeText={(value) => onChange({ ...form, name: value })}
-            value={form.name}
-          />
-          <FormInput
-            label="Slug"
-            onChangeText={(value) => onChange({ ...form, slug: slugify(value) })}
-            value={form.slug}
-          />
-          <FormInput
-            label="Telefon"
-            onChangeText={(value) => onChange({ ...form, phone: value })}
-            value={form.phone}
-          />
-          <FormInput
-            label="Email"
-            onChangeText={(value) => onChange({ ...form, email: value })}
-            value={form.email}
-          />
-          <FormInput
-            label="Adresse"
-            onChangeText={(value) => onChange({ ...form, addressLine1: value })}
-            value={form.addressLine1}
-          />
-          <FormInput
-            label="Adresse 2"
-            onChangeText={(value) => onChange({ ...form, addressLine2: value })}
-            value={form.addressLine2 ?? ""}
-          />
-          <FormInput
-            label="Postnr."
-            onChangeText={(value) => onChange({ ...form, postalCode: value })}
-            value={form.postalCode}
-          />
-          <FormInput
-            label="By"
-            onChangeText={(value) => onChange({ ...form, city: value })}
-            value={form.city}
-          />
-          <FormInput
-            label="Land"
-            onChangeText={(value) => onChange({ ...form, country: value })}
-            value={form.country}
-          />
-          <FormInput
-            label="Tidszone"
-            onChangeText={(value) => onChange({ ...form, timezone: value })}
-            value={form.timezone}
-          />
-        </View>
+        {step === 1 || !isOnboarding ? (
+          <View style={styles.formSection}>
+            <Text style={styles.panelTitle}>Hvad hedder salonen?</Text>
+            <Text style={styles.panelBody}>Vælg et stærkt navn til din forretning.</Text>
+            <View style={styles.formGrid}>
+              <FormInput
+                label="Salonnavn"
+                onChangeText={onNameChange}
+                value={form.name}
+              />
+              <FormInput
+                autoCapitalize="none"
+                helperText={hasEditedSlug ? "Bruges i links." : "Genereres automatisk."}
+                label="Slug"
+                onChangeText={onSlugChange}
+                value={form.slug}
+              />
+            </View>
+          </View>
+        ) : null}
 
-        <TextInput
-          multiline
-          onChangeText={(value) => onChange({ ...form, description: value })}
-          placeholder="Kort beskrivelse af salonen"
-          placeholderTextColor="#9d9284"
-          style={[styles.input, styles.textarea]}
-          value={form.description ?? ""}
-        />
+        {step === 2 || !isOnboarding ? (
+          <View style={styles.formSection}>
+            <Text style={styles.panelTitle}>Hvor ligger den?</Text>
+            <Text style={styles.panelBody}>Kunderne skal kunne finde dig.</Text>
+            <View style={styles.formGrid}>
+              <FormInput
+                label="Adresse"
+                onChangeText={(value) => onChange({ ...form, addressLine1: value })}
+                value={form.addressLine1}
+              />
+            </View>
+            <View style={styles.formRow}>
+              <View style={styles.formRowCompact}>
+                <FormInput
+                  keyboardType="number-pad"
+                  label="Postnr."
+                  onChangeText={(value) => onChange({ ...form, postalCode: value })}
+                  value={form.postalCode}
+                />
+              </View>
+              <View style={styles.formRowWide}>
+                <FormInput
+                  label="By"
+                  onChangeText={(value) => onChange({ ...form, city: value })}
+                  value={form.city}
+                />
+              </View>
+            </View>
+          </View>
+        ) : null}
 
-        <Pressable
-          onPress={onSubmit}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed && styles.buttonPressed,
-            isSubmitting && styles.buttonDisabled,
-          ]}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#fff8f1" />
+        {step === 3 || !isOnboarding ? (
+          <View style={styles.formSection}>
+            <Text style={styles.panelTitle}>Kontaktoplysninger</Text>
+            <Text style={styles.panelBody}>Hold forbindelsen til dine kunder.</Text>
+            <View style={styles.formGrid}>
+              <FormInput
+                keyboardType="phone-pad"
+                label="Telefon"
+                onChangeText={(value) => onChange({ ...form, phone: value })}
+                value={form.phone}
+              />
+              <FormInput
+                autoCapitalize="none"
+                keyboardType="email-address"
+                label="Email"
+                onChangeText={(value) => onChange({ ...form, email: value })}
+                value={form.email}
+              />
+            </View>
+            <TextInput
+              multiline
+              onChangeText={(value) => onChange({ ...form, description: value })}
+              placeholder="Din bio (valgfrit)"
+              placeholderTextColor="#9d9284"
+              style={[styles.input, styles.textarea]}
+              value={form.description ?? ""}
+            />
+          </View>
+        ) : null}
+
+        <View style={styles.formActions}>
+          {isOnboarding && step > 1 ? (
+            <Pressable onPress={handleBack} style={styles.backButton}>
+              <Text style={styles.backButtonText}>Tilbage</Text>
+            </Pressable>
+          ) : <View style={{ flex: 1 }} />}
+
+          {isOnboarding && step < 3 ? (
+            <Pressable 
+              onPress={handleNext} 
+              disabled={step === 1 ? !isStep1Valid : !isStep2Valid}
+              style={[styles.primaryButton, (step === 1 ? !isStep1Valid : !isStep2Valid) && styles.buttonDisabled]}
+            >
+              <Text style={styles.primaryButtonText}>Næste</Text>
+            </Pressable>
           ) : (
-            <Text style={styles.primaryButtonText}>Opret salon</Text>
+            <Pressable
+              onPress={onSubmit}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.buttonPressed,
+                isSubmitting && styles.buttonDisabled,
+                { minWidth: 140 }
+              ]}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.primaryButtonText}>
+                  {isOnboarding ? "Opret salon" : "Opret salon"}
+                </Text>
+              )}
+            </Pressable>
           )}
-        </Pressable>
-      </View>
-
-      {createdSalon ? (
-        <View style={styles.panel}>
-          <Text style={styles.panelEyebrow}>Ny salon</Text>
-          <Text style={styles.panelTitle}>{createdSalon.name}</Text>
-          <Text style={styles.panelBody}>
-            Salon oprettet med slug `{createdSalon.slug}` og timezone{" "}
-            {createdSalon.timezone}.
-          </Text>
         </View>
-      ) : null}
+      </View>
+    </View>
+  );
+}
+
+function StepBadge({
+  active,
+  label,
+}: {
+  active: boolean;
+  label: string;
+}) {
+  return (
+    <View style={[styles.stepBadge, active && styles.stepBadgeActive]}>
+      <Text style={[styles.stepBadgeText, active && styles.stepBadgeTextActive]}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -621,10 +668,16 @@ function ClientPanel({ viewer }: { viewer: ViewerContext | null }) {
 }
 
 function FormInput({
+  autoCapitalize,
+  helperText,
+  keyboardType,
   label,
   onChangeText,
   value,
 }: {
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  helperText?: string;
+  keyboardType?: "default" | "email-address" | "number-pad" | "phone-pad";
   label: string;
   onChangeText: (value: string) => void;
   value: string;
@@ -633,12 +686,15 @@ function FormInput({
     <View style={styles.formField}>
       <Text style={styles.formLabel}>{label}</Text>
       <TextInput
+        autoCapitalize={autoCapitalize}
+        keyboardType={keyboardType}
         onChangeText={onChangeText}
         placeholder={label}
         placeholderTextColor="#9d9284"
         style={styles.input}
         value={value}
       />
+      {helperText ? <Text style={styles.formHelper}>{helperText}</Text> : null}
     </View>
   );
 }
@@ -660,113 +716,58 @@ function slugify(value: string) {
 
 const styles = StyleSheet.create({
   screen: {
-    backgroundColor: "#efe5d6",
+    backgroundColor: "#ffffff",
     flexGrow: 1,
-    padding: 20,
+    padding: 24,
+    justifyContent: "center",
+  },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  logoText: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#20352d",
+    letterSpacing: -0.5,
+  },
+  logoutButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 99,
+    backgroundColor: "#f5f5f5",
+  },
+  logoutButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1f2937",
   },
   shell: {
-    gap: 20,
     marginHorizontal: "auto",
-    maxWidth: 1200,
+    maxWidth: 600,
     width: "100%",
-  },
-  shellWide: {
-    alignItems: "stretch",
-    flexDirection: "row",
-  },
-  hero: {
-    backgroundColor: "#20352d",
-    borderRadius: 32,
-    gap: 18,
-    padding: 24,
-  },
-  heroWide: {
-    flex: 0.92,
-    minHeight: 760,
   },
   content: {
     gap: 16,
+    paddingBottom: 40,
   },
-  contentWide: {
-    flex: 1.08,
-  },
-  eyebrow: {
-    color: "#e7a06e",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-  heroTitle: {
-    color: "#fff9f3",
-    fontSize: 34,
-    fontWeight: "800",
-    lineHeight: 40,
-  },
-  heroSubtitle: {
-    color: "#d2ddd7",
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  summaryCard: {
-    backgroundColor: "rgba(255, 249, 243, 0.1)",
-    borderColor: "rgba(255, 249, 243, 0.1)",
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 8,
-    padding: 18,
-  },
-  summaryLabel: {
-    color: "#d2ddd7",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  summaryValue: {
-    color: "#fff9f3",
-    fontSize: 24,
-    fontWeight: "800",
-  },
-  summaryMeta: {
-    color: "#d2ddd7",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  heroActions: {
+  formActions: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  intentChip: {
-    backgroundColor: "rgba(255, 249, 243, 0.08)",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  intentChipActive: {
-    backgroundColor: "#fff9f3",
-  },
-  intentChipText: {
-    color: "#fff9f3",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  intentChipTextActive: {
-    color: "#20352d",
-  },
-  secondaryButton: {
+    justifyContent: "space-between",
     alignItems: "center",
-    borderColor: "rgba(255, 249, 243, 0.22)",
-    borderRadius: 18,
-    borderWidth: 1,
+    marginTop: 10,
+  },
+  backButton: {
+    alignItems: "center",
     justifyContent: "center",
-    minHeight: 54,
+    minHeight: 56,
     paddingHorizontal: 18,
   },
-  secondaryButtonText: {
-    color: "#fff9f3",
-    fontSize: 15,
+  backButtonText: {
+    color: "#666",
+    fontSize: 16,
     fontWeight: "800",
   },
   notice: {
@@ -801,12 +802,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   panel: {
-    backgroundColor: "#fff9f3",
-    borderColor: "#e7d8c6",
-    borderRadius: 30,
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e2e2",
+    borderRadius: 24,
     borderWidth: 1,
-    gap: 14,
-    padding: 22,
+    gap: 16,
+    padding: 28,
+  },
+  onboardingPanel: {
+    gap: 18,
   },
   panelEyebrow: {
     color: "#b45524",
@@ -825,6 +829,28 @@ const styles = StyleSheet.create({
     color: "#6b635b",
     fontSize: 15,
     lineHeight: 22,
+  },
+  stepsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  stepBadge: {
+    backgroundColor: "#f2e8db",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  stepBadgeActive: {
+    backgroundColor: "#e7f0ea",
+  },
+  stepBadgeText: {
+    color: "#73695f",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  stepBadgeTextActive: {
+    color: "#315743",
   },
   pinRow: {
     gap: 12,
@@ -896,10 +922,28 @@ const styles = StyleSheet.create({
     color: "#8f877d",
     fontSize: 14,
   },
+  formSection: {
+    gap: 12,
+  },
+  sectionTitle: {
+    color: "#3c3935",
+    fontSize: 15,
+    fontWeight: "800",
+  },
   formGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
+  },
+  formRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  formRowCompact: {
+    flex: 0.45,
+  },
+  formRowWide: {
+    flex: 1,
   },
   formField: {
     flexGrow: 1,
@@ -910,6 +954,11 @@ const styles = StyleSheet.create({
     color: "#4f4a45",
     fontSize: 13,
     fontWeight: "700",
+  },
+  formHelper: {
+    color: "#8b8177",
+    fontSize: 12,
+    lineHeight: 16,
   },
   input: {
     backgroundColor: "#f7efe4",
@@ -925,6 +974,22 @@ const styles = StyleSheet.create({
   textarea: {
     minHeight: 120,
     textAlignVertical: "top",
+  },
+  inlineMetaCard: {
+    backgroundColor: "#f6efe3",
+    borderRadius: 18,
+    gap: 6,
+    padding: 14,
+  },
+  inlineMetaTitle: {
+    color: "#3c3935",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  inlineMetaText: {
+    color: "#6e655b",
+    fontSize: 13,
+    lineHeight: 18,
   },
   primaryButton: {
     alignItems: "center",
@@ -944,6 +1009,21 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.7,
+  },
+  successPanel: {
+    backgroundColor: "#f6fbf7",
+    borderColor: "#d6e8da",
+  },
+  successMeta: {
+    backgroundColor: "#ebf5ed",
+    borderRadius: 16,
+    gap: 6,
+    padding: 14,
+  },
+  successMetaText: {
+    color: "#355744",
+    fontSize: 13,
+    lineHeight: 18,
   },
   stateScreen: {
     alignItems: "center",
